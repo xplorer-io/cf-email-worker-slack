@@ -11,6 +11,7 @@ export default {
 async function handleEmail(message: EmailMessage, env: Env, ctx: ExecutionContext): Promise<void> {
 	const parser = new PostalMime.default();
 	const slackWebhookUrl = env.SLACK_WEBHOOK_URL;
+	const sharedMailboxAddress = 'yashcrest@gmail.com';
 
 	if (!slackWebhookUrl) {
 		throw new Error('SLACK_WEBHOOK_URL is missing in environment variables.');
@@ -28,26 +29,30 @@ async function handleEmail(message: EmailMessage, env: Env, ctx: ExecutionContex
 		const content = email.text || '(no content)';
 
 		//Prepare the base Slack Message
-		const slackMessage = {
-			text: `📧 *New Email Received* \n\n*From:* ${from}\n*To:* ${to}\n*Subject:* ${subject}\n\n*Content:*\n\`\`\`${content}\`\`\``,
-		};
+		let slackMessage = `📧 *New Email Received* \n\n*From:* ${from}\n*To:* ${to}\n*Subject:* ${subject}\n\n*Content:*\n\`\`\`${content}\`\`\``;
 
 		//check for attachments and add them if they exist
 		if (email.attachments && email.attachments.length > 0) {
-			const attachments = email.attachments[0];
-			slackMessage.text = `\n\n*Attachments:* ${attachments.filename}`;
+			let attachmentText = `\n\n*Attachments:*`;
+			email.attachments.forEach((attachment, index) => {
+				attachmentText += `\n${index + 1}. ${attachment.filename}`;
+			});
+			slackMessage += attachmentText;
 		} else {
-			slackMessage.text += `\n\n*No Attachments*`;
+			slackMessage += `\n\n*No Attachments*`;
 		}
 
 		//forwarding email to slack
 		const response = await fetch(slackWebhookUrl, {
 			method: 'POST',
 			headers: { 'Content-type': 'application/json' },
-			body: JSON.stringify(slackMessage),
+			body: JSON.stringify({ text: slackMessage }),
 		});
 
 		if (!response.ok) throw new Error(`Failed to post Email to Slack Webhook:  ${response.statusText}`);
+
+		//foward email to shared mailbox
+		await message.forward(sharedMailboxAddress);
 	} catch (error: any) {
 		//reporting any parsing error to Slack as well
 		const response = await fetch(slackWebhookUrl, {
